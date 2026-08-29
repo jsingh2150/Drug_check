@@ -307,3 +307,36 @@ footer {
   .constraint-list > div,
   .metadata > div { grid-template-columns: 1fr; gap: 3px; }
 }
+
+/* =========================================
+   LABEL BULLET LIST STYLES
+   ========================================= */
+
+.label-bullet-list {
+  margin: 0.5rem 0 0 0;
+  padding-left: 1.25rem;
+  list-style-type: disc;
+}
+
+.label-bullet-list li {
+  margin-bottom: 0.65rem;
+  line-height: 1.55;
+  color: #334155;
+  font-size: 0.95rem;
+}
+
+.label-bullet-list li:last-child {
+  margin-bottom: 0;
+}
+
+.label-bullet-list li strong {
+  color: #0f172a;
+}
+
+p.muted, 
+.muted {
+  color: #64748b;
+  font-style: italic;
+  font-size: 0.9rem;
+  margin: 0;
+}
