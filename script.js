@@ -7,7 +7,7 @@ const API = {
 
 const $ = (id) => document.getElementById(id);
 
-// Safe Fetch Wrapper to prevent network/CORS crashes from killing search flow
+// Safe Fetch Wrapper to prevent CORS or network errors from halting search execution
 async function safeFetchJson(url) {
   try {
     const response = await fetch(url);
@@ -15,15 +15,20 @@ async function safeFetchJson(url) {
     return await response.json();
   } catch (err) {
     console.warn(`Fetch failed for URL (${url}):`, err);
-    return null; // Return null so Promise.allSettled fails gracefully
+    return null;
   }
 }
 
+// Bind DOM Events once the HTML finishes loading
 document.addEventListener("DOMContentLoaded", () => {
-  $("searchForm").addEventListener("submit", (e) => {
-    e.preventDefault();
-    searchDrug($("drugInput").value.trim());
-  });
+  const searchForm = $("searchForm");
+  
+  if (searchForm) {
+    searchForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      searchDrug($("drugInput").value.trim());
+    });
+  }
 
   document.querySelectorAll(".example").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -56,6 +61,31 @@ function first(value, fallback = "") {
   return Array.isArray(value) ? (value[0] || fallback) : (value || fallback);
 }
 
+// Formats long continuous text blocks into individual bulleted list items
+function formatAsBullets(text) {
+  if (!text || text === "No information returned.") {
+    return '<p class="muted">No information returned.</p>';
+  }
+
+  const cleaned = cleanText(text);
+
+  // Split on section breaks, bullet symbols (•, -, *), or period followed by new section/sentence
+  const rawItems = cleaned
+    .split(/(?:\r?\n|•|\s\*\s|\b\d+\.\d+\b|\.\s+(?=[A-Z0-9]))/g)
+    .map(item => item.trim())
+    .filter(item => item.length > 3);
+
+  if (rawItems.length === 0) {
+    return `<p>${cleaned}</p>`;
+  }
+
+  const listItems = rawItems
+    .map(item => `<li>${item}</li>`)
+    .join('');
+
+  return `<ul class="label-bullet-list">${listItems}</ul>`;
+}
+
 async function searchDrug(drug) {
   if (!drug) return;
 
@@ -64,11 +94,11 @@ async function searchDrug(drug) {
   setStatus(`Searching FDA label data for "${drug}"...`);
 
   try {
-    // 1. Try generic search
+    // 1. Try generic search first
     const genericUrl = `${API.label}?search=openfda.generic_name:"${encodeURIComponent(drug)}"&limit=10`;
     let labelData = await safeFetchJson(genericUrl);
 
-    // 2. Fallback to brand name search if generic yields no results
+    // 2. Fall back to brand name search if generic returns empty
     if (!labelData?.results?.length) {
       const brandUrl = `${API.label}?search=openfda.brand_name:"${encodeURIComponent(drug)}"&limit=10`;
       labelData = await safeFetchJson(brandUrl);
@@ -81,7 +111,7 @@ async function searchDrug(drug) {
     const record = chooseBestLabel(labelData.results, drug);
     const generic = first(record.openfda?.generic_name, drug);
 
-    // 3. Parallel fetch supporting services
+    // 3. Fetch supporting sources concurrently
     const [dailyMed, drugsFda] = await Promise.all([
       fetchDailyMed(generic),
       fetchDrugsFda(record)
@@ -150,23 +180,24 @@ function render(record, dailyMed, drugsFda, searchedDrug) {
 
   const boxed = cleanText(record.boxed_warning);
   $("boxedBadge").classList.toggle("hidden", !record.boxed_warning);
-  $("boxedWarning").textContent = boxed;
+  $("boxedWarning").innerHTML = formatAsBullets(boxed);
 
-  $("indications").textContent = cleanText(record.indications_and_usage || record.indications_and_usage_table);
-  $("contraindications").textContent = cleanText(record.contraindications);
+  // Render main text sections as formatted bullet points
+  $("indications").innerHTML = formatAsBullets(record.indications_and_usage || record.indications_and_usage_table);
+  $("contraindications").innerHTML = formatAsBullets(record.contraindications);
 
   const dosageText = cleanText(record.dosage_and_administration);
-  $("dosage").textContent = dosageText;
+  $("dosage").innerHTML = formatAsBullets(dosageText);
   renderMaximumDose(dosageText);
 
-  $("warnings").textContent = cleanText(record.warnings_and_cautions || record.warnings);
+  $("warnings").innerHTML = formatAsBullets(record.warnings_and_cautions || record.warnings);
 
-  $("pediatric").textContent = cleanText(record.pediatric_use || record.use_in_specific_populations).slice(0, 1800);
-  $("geriatric").textContent = cleanText(record.geriatric_use || record.use_in_specific_populations).slice(0, 1800);
-  $("renal").textContent = cleanText(record.renal_impairment || record.use_in_specific_populations).slice(0, 1800);
-  $("hepatic").textContent = cleanText(record.hepatic_impairment || record.use_in_specific_populations).slice(0, 1800);
-  $("pregnancy").textContent = cleanText(record.pregnancy || record.use_in_specific_populations).slice(0, 1800);
-  $("lactation").textContent = cleanText(record.lactation || record.use_in_specific_populations).slice(0, 1800);
+  $("pediatric").innerHTML = formatAsBullets(record.pediatric_use || record.use_in_specific_populations);
+  $("geriatric").innerHTML = formatAsBullets(record.geriatric_use || record.use_in_specific_populations);
+  $("renal").innerHTML = formatAsBullets(record.renal_impairment || record.use_in_specific_populations);
+  $("hepatic").innerHTML = formatAsBullets(record.hepatic_impairment || record.use_in_specific_populations);
+  $("pregnancy").innerHTML = formatAsBullets(record.pregnancy || record.use_in_specific_populations);
+  $("lactation").innerHTML = formatAsBullets(record.lactation || record.use_in_specific_populations);
 
   const effectiveDate = first(record.effective_time, record.effective_date);
   $("effectiveDate").textContent = formatDate(effectiveDate);
@@ -177,7 +208,7 @@ function render(record, dailyMed, drugsFda, searchedDrug) {
   $("dosageForm").textContent = first(of.dosage_form, "—");
   $("route").textContent = first(of.route, "—");
 
-  // Robustly unpack DailyMed response formats or fallback to a search URL
+  // Handle DailyMed link creation safely
   const dailyMedSetId = dailyMed?.data?.[0]?.[0] || dailyMed?.results?.[0]?.setid;
   const dailyMedTitle = dailyMed?.data?.[0]?.[1] || dailyMed?.results?.[0]?.title;
 
