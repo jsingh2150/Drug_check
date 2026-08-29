@@ -7,15 +7,29 @@ const API = {
 
 const $ = (id) => document.getElementById(id);
 
-$("searchForm").addEventListener("submit", (e) => {
-  e.preventDefault();
-  searchDrug($("drugInput").value.trim());
-});
+// Safe Fetch Wrapper to prevent network/CORS crashes from killing search flow
+async function safeFetchJson(url) {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (err) {
+    console.warn(`Fetch failed for URL (${url}):`, err);
+    return null; // Return null so Promise.allSettled fails gracefully
+  }
+}
 
-document.querySelectorAll(".example").forEach(btn => {
-  btn.addEventListener("click", () => {
-    $("drugInput").value = btn.dataset.drug;
-    searchDrug(btn.dataset.drug);
+document.addEventListener("DOMContentLoaded", () => {
+  $("searchForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    searchDrug($("drugInput").value.trim());
+  });
+
+  document.querySelectorAll(".example").forEach(btn => {
+    btn.addEventListener("click", () => {
+      $("drugInput").value = btn.dataset.drug;
+      searchDrug(btn.dataset.drug);
+    });
   });
 });
 
@@ -42,27 +56,6 @@ function first(value, fallback = "") {
   return Array.isArray(value) ? (value[0] || fallback) : (value || fallback);
 }
 
-function getField(record, names) {
-  for (const name of names) {
-    if (record && record[name] != null) return record[name];
-  }
-  return "";
-}
-
-function buildLabelQuery(drug) {
-  const encoded = encodeURIComponent(drug);
-  return `${API.label}?search=openfda.generic_name:"${encoded}"&limit=10`;
-}
-
-async function fetchJson(url) {
-  const response = await fetch(url);
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`HTTP ${response.status}${body ? `: ${body.slice(0, 150)}` : ""}`);
-  }
-  return response.json();
-}
-
 async function searchDrug(drug) {
   if (!drug) return;
 
@@ -71,39 +64,35 @@ async function searchDrug(drug) {
   setStatus(`Searching FDA label data for "${drug}"...`);
 
   try {
-    // openFDA label data is used for the structured label sections.
-    // A second query handles brand-name searches.
-    let labelData = await fetchJson(buildLabelQuery(drug));
+    // 1. Try generic search
+    const genericUrl = `${API.label}?search=openfda.generic_name:"${encodeURIComponent(drug)}"&limit=10`;
+    let labelData = await safeFetchJson(genericUrl);
 
-    if (!labelData.results?.length) {
-      const brandUrl =
-        `${API.label}?search=openfda.brand_name:"${encodeURIComponent(drug)}"&limit=10`;
-      labelData = await fetchJson(brandUrl);
+    // 2. Fallback to brand name search if generic yields no results
+    if (!labelData?.results?.length) {
+      const brandUrl = `${API.label}?search=openfda.brand_name:"${encodeURIComponent(drug)}"&limit=10`;
+      labelData = await safeFetchJson(brandUrl);
     }
 
-    if (!labelData.results?.length) {
+    if (!labelData?.results?.length) {
       throw new Error(`No FDA label records were found for "${drug}".`);
     }
 
     const record = chooseBestLabel(labelData.results, drug);
-
-    // Run supporting searches in parallel.
     const generic = first(record.openfda?.generic_name, drug);
-    const dailyMedPromise = fetchDailyMed(generic);
-    const drugsFdaPromise = fetchDrugsFda(record);
 
-    const [dailyMed, drugsFda] = await Promise.allSettled([
-      dailyMedPromise,
-      drugsFdaPromise
+    // 3. Parallel fetch supporting services
+    const [dailyMed, drugsFda] = await Promise.all([
+      fetchDailyMed(generic),
+      fetchDrugsFda(record)
     ]);
 
-    render(record, dailyMed.status === "fulfilled" ? dailyMed.value : null,
-           drugsFda.status === "fulfilled" ? drugsFda.value : null, drug);
+    render(record, dailyMed, drugsFda, drug);
 
     clearStatus();
     $("results").classList.remove("hidden");
   } catch (error) {
-    console.error(error);
+    console.error("Search Error:", error);
     setStatus(error.message || "Unable to retrieve FDA data.", "error");
   }
 }
@@ -115,7 +104,6 @@ function chooseBestLabel(records, drug) {
     let score = 0;
     const g = (r.openfda?.generic_name || []).join(" ").toLowerCase();
     const b = (r.openfda?.brand_name || []).join(" ").toLowerCase();
-    const title = (r.spl_product_data_elements || []).join(" ").toLowerCase();
 
     if (g === term) score += 10;
     if (b === term) score += 12;
@@ -130,28 +118,21 @@ function chooseBestLabel(records, drug) {
 }
 
 async function fetchDailyMed(generic) {
-  const url =
-    `${API.dailyMedSearch}?drug_name=${encodeURIComponent(generic)}&pagesize=20&page=1`;
-  return fetchJson(url);
+  const url = `${API.dailyMedSearch}?drug_name=${encodeURIComponent(generic)}&pagesize=5&page=1`;
+  return await safeFetchJson(url);
 }
 
 async function fetchDrugsFda(record) {
-  const app =
-    first(record.openfda?.application_number) ||
-    first(record.application_number);
+  const app = first(record.openfda?.application_number) || first(record.application_number);
 
   if (app) {
-    return fetchJson(
-      `${API.drugsFda}?search=application_number:"${encodeURIComponent(app)}"&limit=10`
-    );
+    return await safeFetchJson(`${API.drugsFda}?search=application_number:"${encodeURIComponent(app)}"&limit=5`);
   }
 
   const generic = first(record.openfda?.generic_name);
   if (!generic) return null;
 
-  return fetchJson(
-    `${API.drugsFda}?search=products.active_ingredients.name:"${encodeURIComponent(generic)}"&limit=10`
-  );
+  return await safeFetchJson(`${API.drugsFda}?search=products.active_ingredients.name:"${encodeURIComponent(generic)}"&limit=5`);
 }
 
 function render(record, dailyMed, drugsFda, searchedDrug) {
@@ -171,36 +152,21 @@ function render(record, dailyMed, drugsFda, searchedDrug) {
   $("boxedBadge").classList.toggle("hidden", !record.boxed_warning);
   $("boxedWarning").textContent = boxed;
 
-  $("indications").textContent =
-    cleanText(record.indications_and_usage || record.indications_and_usage_table);
-
-  $("contraindications").textContent =
-    cleanText(record.contraindications);
+  $("indications").textContent = cleanText(record.indications_and_usage || record.indications_and_usage_table);
+  $("contraindications").textContent = cleanText(record.contraindications);
 
   const dosageText = cleanText(record.dosage_and_administration);
   $("dosage").textContent = dosageText;
   renderMaximumDose(dosageText);
 
-  $("warnings").textContent =
-    cleanText(record.warnings_and_cautions || record.warnings);
+  $("warnings").textContent = cleanText(record.warnings_and_cautions || record.warnings);
 
-  $("pediatric").textContent =
-    cleanText(record.pediatric_use || record.use_in_specific_populations).slice(0, 1800);
-
-  $("geriatric").textContent =
-    cleanText(record.geriatric_use || record.use_in_specific_populations).slice(0, 1800);
-
-  $("renal").textContent =
-    cleanText(record.renal_impairment || record.use_in_specific_populations).slice(0, 1800);
-
-  $("hepatic").textContent =
-    cleanText(record.hepatic_impairment || record.use_in_specific_populations).slice(0, 1800);
-
-  $("pregnancy").textContent =
-    cleanText(record.pregnancy || record.use_in_specific_populations).slice(0, 1800);
-
-  $("lactation").textContent =
-    cleanText(record.lactation || record.use_in_specific_populations).slice(0, 1800);
+  $("pediatric").textContent = cleanText(record.pediatric_use || record.use_in_specific_populations).slice(0, 1800);
+  $("geriatric").textContent = cleanText(record.geriatric_use || record.use_in_specific_populations).slice(0, 1800);
+  $("renal").textContent = cleanText(record.renal_impairment || record.use_in_specific_populations).slice(0, 1800);
+  $("hepatic").textContent = cleanText(record.hepatic_impairment || record.use_in_specific_populations).slice(0, 1800);
+  $("pregnancy").textContent = cleanText(record.pregnancy || record.use_in_specific_populations).slice(0, 1800);
+  $("lactation").textContent = cleanText(record.lactation || record.use_in_specific_populations).slice(0, 1800);
 
   const effectiveDate = first(record.effective_time, record.effective_date);
   $("effectiveDate").textContent = formatDate(effectiveDate);
@@ -211,50 +177,39 @@ function render(record, dailyMed, drugsFda, searchedDrug) {
   $("dosageForm").textContent = first(of.dosage_form, "—");
   $("route").textContent = first(of.route, "—");
 
+  // Robustly unpack DailyMed response formats or fallback to a search URL
   const dailyMedSetId = dailyMed?.data?.[0]?.[0] || dailyMed?.results?.[0]?.setid;
   const dailyMedTitle = dailyMed?.data?.[0]?.[1] || dailyMed?.results?.[0]?.title;
 
   const dailyMedUrl = dailyMedSetId
     ? `https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=${dailyMedSetId}`
-    : `https://dailymed.nlm.nih.gov/dailymed/search.cfm?query=${encodeURIComponent(generic)}`;
+    : `https://dailymed.nlm.nih.gov/dailymed/search.cfm?labeltype=all&query=${encodeURIComponent(generic)}`;
 
   $("dailyMedSource").href = dailyMedUrl;
   $("dailymedIndications").href = dailyMedUrl;
 
-  const labelUrl =
-    `https://api.fda.gov/drug/label.json?search=openfda.generic_name:"${encodeURIComponent(generic)}"`;
+  $("labelSource").href = `${API.label}?search=openfda.generic_name:"${encodeURIComponent(generic)}"`;
 
-  $("labelSource").href = labelUrl;
-
-  const drugsFdaApp = drugsFda?.results?.[0]?.application_number ||
-                      appNumber || "";
-
+  const drugsFdaApp = drugsFda?.results?.[0]?.application_number || appNumber || "";
   $("drugsFdaSource").href = drugsFdaApp
-    ? `https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=BasicSearch.process`
+    ? `https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=overview.process&ApplNo=${encodeURIComponent(drugsFdaApp.replace(/[^0-9]/g, ''))}`
     : `https://www.accessdata.fda.gov/scripts/cder/daf/`;
 
-  $("remsSearch").href =
-    `${API.rems}?search=${encodeURIComponent(generic)}`;
+  $("remsSearch").href = `${API.rems}`;
 
   renderRems(record, generic);
 
-  $("sourceSummary").textContent =
-    `Search term: ${searchedDrug} • FDA label record: ${setId || "not returned"}`
+  $("sourceSummary").textContent = `Search term: ${searchedDrug} • FDA label record: ${setId || "not returned"}`
     + (dailyMedTitle ? ` • DailyMed: ${dailyMedTitle}` : "");
 }
 
 function renderMaximumDose(dosageText) {
   const box = $("maxDose");
   const text = dosageText.replace(/\s+/g, " ").trim();
-
-  // Phase 1 intentionally avoids inventing a numeric maximum.
-  // It highlights label language containing "maximum" so the user
-  // can immediately inspect the relevant FDA-approved dosage text.
   const sentences = text.match(/[^.!?]*(?:maximum|max dose|max daily|not exceed)[^.!?]*[.!?]?/gi) || [];
 
   if (sentences.length) {
-    box.textContent =
-      "FDA dosage text mentioning a maximum: " + sentences.slice(0, 3).join(" ");
+    box.textContent = "FDA dosage text mentioning a maximum: " + sentences.slice(0, 3).join(" ");
     box.classList.remove("hidden");
   } else {
     box.classList.add("hidden");
@@ -262,9 +217,6 @@ function renderMaximumDose(dosageText) {
 }
 
 function renderRems(record, generic) {
-  // REMS can be represented in SPL/label data, but FDA's current
-  // REMS dataset is maintained separately. Phase 1 therefore reports
-  // any REMS-related label text and provides the FDA REMS search.
   const combined = [
     record.risk_evaluation_and_mitigation_strategy,
     record.rems,
@@ -275,9 +227,9 @@ function renderRems(record, generic) {
 
   $("remsResult").innerHTML = hit
     ? `<strong>REMS-related language found in the FDA label.</strong>
-       <p class="small-note">Open the FDA REMS resource below to verify the current approved REMS program and requirements.</p>`
+       <p class="small-note">Open the FDA REMS resource below to verify current program requirements.</p>`
     : `<strong>No REMS-specific language was identified in this label record.</strong>
-       <p class="small-note">This is not a definitive "No REMS" determination in Phase 1. Verify against FDA REMS.</p>`;
+       <p class="small-note">Verify against the official FDA REMS database using the link below.</p>`;
 }
 
 function formatDate(value) {
