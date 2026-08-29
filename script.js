@@ -7,7 +7,7 @@ const API = {
 
 const $ = (id) => document.getElementById(id);
 
-// Safe Fetch Wrapper to prevent CORS or network errors from halting search execution
+// Safe Fetch Wrapper
 async function safeFetchJson(url) {
   try {
     const response = await fetch(url);
@@ -19,7 +19,7 @@ async function safeFetchJson(url) {
   }
 }
 
-// Bind DOM Events once HTML finishes loading
+// Event Listeners
 document.addEventListener("DOMContentLoaded", () => {
   const searchForm = $("searchForm");
   
@@ -52,43 +52,44 @@ function first(value, fallback = "") {
   return Array.isArray(value) ? (value[0] || fallback) : (value || fallback);
 }
 
-// Cleans FDA-specific text artifacts, empty brackets, section numbers, and citations
+// Global Text Cleaning Utility
 function cleanText(value) {
   if (value == null) return "";
   
   let str = Array.isArray(value) ? value.join(" ") : String(value);
 
   return str
-    // 1. Remove HTML tags
+    // Remove HTML tags
     .replace(/<[^>]*>/g, " ")
-    // 2. Remove broken reference links like "[see Warnings and Precautions ( )]" or "[see 17]"
+    // Remove broken reference links like "[see Warnings and Precautions ( )]" or "[see 17]"
     .replace(/\[\s*see\s+[^\]]*?\]/gi, "")
-    // 3. Remove section citations in parentheses like "( 4 )" or "( 5.1 )"
+    // Remove section citations in parentheses like "( 4 )" or "( 5.1 )"
     .replace(/\(\s*\d+(\.\d+)?\s*\)/g, "")
-    // 4. Remove leading section headers like "4 CONTRAINDICATIONS" or "1 INDICATIONS AND USAGE"
+    // Remove leading section titles like "4 CONTRAINDICATIONS", "1 INDICATIONS AND USAGE", etc.
     .replace(/^\s*\d+(\.\d+)?\s+[A-Z\s]{3,30}\b/g, "")
-    // 5. Clean up redundant space before punctuation
+    .replace(/\b\d+(\.\d+)?\s+[A-Z\s]{3,30}\b/g, "")
+    // Clean spaces before punctuation
     .replace(/\s+([.,;:?!])/g, "$1")
-    // 6. Normalize whitespace
+    // Normalize spaces and newlines
     .replace(/\s+/g, " ")
     .trim();
 }
 
-// Converts messy text paragraphs into a clean, deduplicated bulleted list
-function formatAsBullets(text) {
-  const cleaned = cleanText(text);
+// Formats raw text or arrays into cleaned, deduplicated bullet lists
+function formatAsBullets(rawInput) {
+  const cleaned = cleanText(rawInput);
 
   if (!cleaned) {
     return '<p class="muted">No information returned.</p>';
   }
 
-  // Split into distinct items on sentence boundaries or bullet indicators
+  // Split on periods followed by spaces, inline bullet points, or numbers
   const rawItems = cleaned
     .split(/(?<=\.)\s+|•|\s\*\s/)
     .map(item => item.trim())
-    .filter(item => item.length > 5); // Exclude tiny orphan fragments
+    .filter(item => item.length > 5);
 
-  // Deduplicate sentences automatically across the section
+  // Deduplicate sentences
   const uniqueItems = [];
   const seen = new Set();
 
@@ -119,11 +120,9 @@ async function searchDrug(drug) {
   setStatus(`Searching FDA label data for "${drug}"...`);
 
   try {
-    // 1. Try generic search first
     const genericUrl = `${API.label}?search=openfda.generic_name:"${encodeURIComponent(drug)}"&limit=10`;
     let labelData = await safeFetchJson(genericUrl);
 
-    // 2. Fall back to brand name search if generic yields no results
     if (!labelData?.results?.length) {
       const brandUrl = `${API.label}?search=openfda.brand_name:"${encodeURIComponent(drug)}"&limit=10`;
       labelData = await safeFetchJson(brandUrl);
@@ -136,7 +135,6 @@ async function searchDrug(drug) {
     const record = chooseBestLabel(labelData.results, drug);
     const generic = first(record.openfda?.generic_name, drug);
 
-    // 3. Run supporting requests in parallel
     const [dailyMed, drugsFda] = await Promise.all([
       fetchDailyMed(generic),
       fetchDrugsFda(record)
@@ -203,20 +201,22 @@ function render(record, dailyMed, drugsFda, searchedDrug) {
   $("drugBrand").textContent = brand;
   $("drugManufacturer").textContent = manufacturer;
 
+  // Boxed Warning
   const boxed = record.boxed_warning;
   $("boxedBadge").classList.toggle("hidden", !boxed);
   $("boxedWarning").innerHTML = formatAsBullets(boxed);
 
-  // Render main text sections with deduplicated bullets
+  // Apply formatAsBullets to ALL sections directly
   $("indications").innerHTML = formatAsBullets(record.indications_and_usage || record.indications_and_usage_table);
   $("contraindications").innerHTML = formatAsBullets(record.contraindications);
+  
+  const dosageRaw = record.dosage_and_administration || record.dosage_and_administration_table;
+  $("dosage").innerHTML = formatAsBullets(dosageRaw);
+  renderMaximumDose(cleanText(dosageRaw));
 
-  const dosageText = cleanText(record.dosage_and_administration);
-  $("dosage").innerHTML = formatAsBullets(dosageText);
-  renderMaximumDose(dosageText);
+  $("warnings").innerHTML = formatAsBullets(record.warnings_and_cautions || record.warnings || record.precautions);
 
-  $("warnings").innerHTML = formatAsBullets(record.warnings_and_cautions || record.warnings);
-
+  // Specific Populations
   $("pediatric").innerHTML = formatAsBullets(record.pediatric_use || record.use_in_specific_populations);
   $("geriatric").innerHTML = formatAsBullets(record.geriatric_use || record.use_in_specific_populations);
   $("renal").innerHTML = formatAsBullets(record.renal_impairment || record.use_in_specific_populations);
@@ -224,6 +224,7 @@ function render(record, dailyMed, drugsFda, searchedDrug) {
   $("pregnancy").innerHTML = formatAsBullets(record.pregnancy || record.use_in_specific_populations);
   $("lactation").innerHTML = formatAsBullets(record.lactation || record.use_in_specific_populations);
 
+  // Metadata
   const effectiveDate = first(record.effective_time, record.effective_date);
   $("effectiveDate").textContent = formatDate(effectiveDate);
 
@@ -233,7 +234,7 @@ function render(record, dailyMed, drugsFda, searchedDrug) {
   $("dosageForm").textContent = first(of.dosage_form, "—");
   $("route").textContent = first(of.route, "—");
 
-  // Handle DailyMed link creation
+  // External Links
   const dailyMedSetId = dailyMed?.data?.[0]?.[0] || dailyMed?.results?.[0]?.setid;
   const dailyMedTitle = dailyMed?.data?.[0]?.[1] || dailyMed?.results?.[0]?.title;
 
@@ -261,8 +262,12 @@ function render(record, dailyMed, drugsFda, searchedDrug) {
 
 function renderMaximumDose(dosageText) {
   const box = $("maxDose");
-  const text = dosageText.replace(/\s+/g, " ").trim();
-  const sentences = text.match(/[^.!?]*(?:maximum|max dose|max daily|not exceed)[^.!?]*[.!?]?/gi) || [];
+  if (!dosageText) {
+    box.classList.add("hidden");
+    return;
+  }
+  
+  const sentences = dosageText.match(/[^.!?]*(?:maximum|max dose|max daily|not exceed)[^.!?]*[.!?]?/gi) || [];
 
   if (sentences.length) {
     box.textContent = "FDA dosage text mentioning a maximum: " + sentences.slice(0, 3).join(" ");
