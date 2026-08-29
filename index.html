@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>FDA Drug Label Lookup — Phase 1</title>
+
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+
+  <!-- =========================
+       HEADER
+  ========================== -->
+
+  <header class="topbar">
+
+    <div>
+
+      <div class="eyebrow">
+        PHASE 1
+      </div>
+
+      <h1>
+        FDA Drug Label Lookup
+      </h1>
+
+      <p>
+        Search FDA/DailyMed labeling and organize key prescribing information.
+      </p>
+
+    </div>
+
+  </header>
+
+
+  <!-- =========================
+       MAIN CONTENT
+  ========================== -->
+
+  <main class="container">
+
+
+    <!-- =========================
+         SEARCH
+    ========================== -->
+
+    <section class="search-card">
+
+      <form id="searchForm">
+
+        <label for="drugInput">
+          Drug name
+        </label>
+
+        <div class="search-row">
+
+          <input
+            id="drugInput"
+            name="drug"
+            type="text"
+            placeholder="e.g., apixaban, Eliquis, semaglutide"
+            autocomplete="off"
+            required
+          >
+
+          <button
+            type="submit"
+            id="searchButton"
+          >
+            Search FDA Data
+          </button>
+
+        </div>
+
+
+        <div class="examples">
+
+          Try:
+
+          <button
+            type="button"
+            class="example"
+            data-drug="apixaban"
+          >
+            apixaban
+          </button>
+
+          <button
+            type="button"
+            class="example"
+            data-drug="semaglutide"
+          >
+            semaglutide
+          </button>
+
+          <button
+            type="button"
+            class="example"
+            data-drug="warfarin"
+          >
+            warfarin
+          </button>
+
+        </div>
+
+      </form>
+
+    </section>
+
+
+    <!-- =========================
+         STATUS MESSAGE
+    ========================== -->
+
+    <div
+      id="status"
+      class="status hidden"
+    ></div>
+
+
+    <!-- =========================
+         RESULTS
+    ========================== -->
+
+    <section
+      id="results"
+      class="hidden"
+    >
+
+
+      <!-- DRUG HEADER -->
+
+      <div class="drug-header">
+
+        <div>
+
+          <div
+            id="drugGeneric"
+            class="drug-generic"
+          ></div>
+
+          <h2 id="drugBrand"></h2>
+
+          <div
+            id="drugManufacturer"
+            class="muted"
+          ></div>
+
+        </div>
+
+
+        <div
+          id="boxedBadge"
+          class="badge hidden"
+        >
+          BOXED WARNING
+        </div>
+
+      </div>
+
+
+      <!-- SOURCE SUMMARY -->
+
+      <div
+        id="sourceSummary"
+        class="source-summary"
+      ></div>
+
+
+      <!-- =========================
+           RESULTS GRID
+      ========================== -->
+
+      <div class="grid">
+
+
+        <!-- INDICATIONS -->
+
+        <article class="panel panel-wide">
+
+          <div class="panel-title">
+
+            <h3>
+              Indications &amp; Usage
+            </h3>
+
+            <span class="section-number">
+              1
+            </span>
+
+          </div>
+
+          <div
+            id="indications"
+            class="label-text"
+          ></div>
+
+          <a
+            id="dailymedIndications"
+            class="source-link"
+            target="_blank"
+            rel="noopener"
+          >
+            View DailyMed label
+          </a>
+
+        </article>
+
+
+        <!-- CONTRAINDICATIONS -->
+
+        <article class="panel">
+
+          <div class="panel-title">
+
+            <h3>
+              Contraindications
+            </h3>
+
+            <span class="section-number">
+              4
+            </span>
+
+          </div>
+
+          <div
+            id="contraindications"
+            class="label-text"
+          ></div>
+
+        </article>
+
+
+        <!-- BOXED WARNING -->
+
+        <article class="panel warning">
+
+          <div class="panel-title">
+
+            <h3>
+              Boxed Warning
+            </h3>
+
+            <span class="section-number">
+              WARNING
+            </span>
+
+          </div>
+
+          <div
+            id="boxedWarning"
+            class="label-text"
+          ></div>
+
+        </article>
+
+
+        <!-- DOSAGE -->
+
+        <article class="panel panel-wide">
+
+          <div class="panel-title">
+
+            <h3>
+              Dosage &amp; Administration
+            </h3>
+
+            <span class="section-number">
+              2
+            </span>
+
+          </div>
+
+          <div
+            id="dosage"
+            class="label-text"
+          ></div>
+
+          <div
+            id="maxDose"
+            class="highlight hidden"
+          ></div>
+
+        </article>
+
+
+        <!-- POPULATION CONSTRAINTS -->
+
+        <article class="panel">
+
+          <div class="panel-title">
+
+            <h3>
+              Patient Population Constraints
+            </h3>
+
+          </div>
+
+
+          <div class="constraint-list">
+
+            <div>
+              <strong>Pediatric</strong>
+              <span id="pediatric"></span>
+            </div>
+
+            <div>
+              <strong>Geriatric</strong>
+              <span id="geriatric"></span>
+            </div>
+
+            <div>
+              <strong>Renal</strong>
+              <span id="renal"></span>
+            </div>
+
+            <div>
+              <strong>Hepatic</strong>
+              <span id="hepatic"></span>
+            </div>
+
+            <div>
+              <strong>Pregnancy</strong>
+              <span id="pregnancy"></span>
+            </div>
+
+            <div>
+              <strong>Lactation</strong>
+              <span id="lactation"></span>
+            </div>
+
+          </div>
+
+        </article>
+
+
+        <!-- REMS -->
+
+        <article class="panel">
+
+          <div class="panel-title">
+
+            <h3>
+              REMS
+            </h3>
+
+          </div>
+
+          <div id="remsResult"></div>
+
+          <p class="small-note">
+            Phase 1 links to FDA REMS resources.
+          </p>
+
+          <a
+            id="remsSearch"
+            class="source-link"
+            target="_blank"
+            rel="noopener"
+          >
+            Search FDA REMS
+          </a>
+
+        </article>
+
+
+        <!-- WARNINGS -->
+
+        <article class="panel panel-wide">
+
+          <div class="panel-title">
+
+            <h3>
+              Warnings &amp; Precautions
+            </h3>
+
+            <span class="section-number">
+              5
+            </span>
+
+          </div>
+
+          <div
+            id="warnings"
+            class="label-text"
+          ></div>
+
+        </article>
+
+
+        <!-- SOURCE INFORMATION -->
+
+        <article class="panel panel-wide">
+
+          <div class="panel-title">
+
+            <h3>
+              FDA / DailyMed Source Information
+            </h3>
+
+          </div>
+
+
+          <div class="metadata">
+
+            <div>
+              <strong>Label effective date</strong>
+              <span id="effectiveDate">—</span>
+            </div>
+
+            <div>
+              <strong>DailyMed Set ID</strong>
+              <span id="setId">—</span>
+            </div>
+
+            <div>
+              <strong>FDA application number</strong>
+              <span id="applicationNumber">—</span>
+            </div>
+
+            <div>
+              <strong>Dosage form</strong>
+              <span id="dosageForm">—</span>
+            </div>
+
+            <div>
+              <strong>Route</strong>
+              <span id="route">—</span>
+            </div>
+
+          </div>
+
+
+          <div class="source-buttons">
+
+            <a
+              id="labelSource"
+              class="button secondary"
+              target="_blank"
+              rel="noopener"
+            >
+              Open FDA label record
+            </a>
+
+            <a
+              id="dailyMedSource"
+              class="button secondary"
+              target="_blank"
+              rel="noopener"
+            >
+              Open DailyMed
+            </a>
+
+            <a
+              id="drugsFdaSource"
+              class="button secondary"
+              target="_blank"
+              rel="noopener"
+            >
+              Open Drugs@FDA
+            </a>
+
+          </div>
+
+        </article>
+
+      </div>
+
+
+      <!-- =========================
+           DISCLAIMER
+      ========================== -->
+
+      <div class="disclaimer">
+
+        <strong>Important:</strong>
+
+        This prototype is an information-retrieval and
+        label-organization tool. It is not a clinical decision-support
+        system and does not replace the current FDA-approved labeling
+        or professional judgment.
+
+      </div>
+
+    </section>
+
+  </main>
+
+
+  <footer>
+
+    Phase 1 prototype • FDA/openFDA + DailyMed sources
+
+  </footer>
+
+
+  <script src="app.js"></script>
+
+</body>
+</html>
