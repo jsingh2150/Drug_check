@@ -5,9 +5,69 @@ const API = {
   remsDatabase: "https://www.accessdata.fda.gov/scripts/cder/rems/index.cfm"
 };
 
+// Comprehensive Active FDA REMS Registry Map (Generic Family Key)
+const FDA_REMS_REGISTRY = {
+  "isotretinoin": {
+    program: "iPLEDGE REMS Program",
+    url: "https://www.ipledgeprogram.com/",
+    desc: "Mandatory program to prevent fetal exposure and severe birth defects."
+  },
+  "clozapine": {
+    program: "Clozapine REMS",
+    url: "https://www.clozapinerems.com/",
+    desc: "Monitors and mitigates the risk of severe neutropenia via absolute neutrophil count (ANC) tracking."
+  },
+  "fentanyl": {
+    program: "TIRF (Transmucosal Immediate-Release Fentanyl) REMS",
+    url: "https://www.tirfremsaccess.com/",
+    desc: "Mitigates the risk of misuse, abuse, addiction, and overdose."
+  },
+  "lenalidomide": {
+    program: "Revlimid REMS",
+    url: "https://www.revlimidrems.com/",
+    desc: "Prevents embryo-fetal exposure during treatment."
+  },
+  "thalidomide": {
+    program: "THALOMID REMS",
+    url: "https://www.thalomidrems.com/",
+    desc: "Strict contraception and pregnancy testing controls to prevent severe birth defects."
+  },
+  "pomalidomide": {
+    program: "POMALYST REMS",
+    url: "https://www.pomalystrems.com/",
+    desc: "Mandatory risk management to prevent fetal exposure."
+  },
+  "mycophenolate": {
+    program: "Mycophenolate REMS",
+    url: "https://www.mycophenolaterems.com/",
+    desc: "Educates providers and patients on pregnancy prevention and congenital malformations."
+  },
+  "buprenorphine": {
+    program: "BTOD REMS Program",
+    url: "https://www.btodrems.com/",
+    desc: "Ensures benefits of transmucosal buprenorphine outweigh accidental exposure and addiction risks."
+  },
+  "olanzapine": {
+    program: "Zyprexa Relprevv REMS",
+    url: "https://www.zyprexarelprevvrems.com/",
+    desc: "Monitors patients for Post-injection Delirium Sedation Syndrome (PDSS)."
+  },
+  "sodium oxybate": {
+    program: "Xyrem / Xywav REMS",
+    url: "https://www.xyremxywavrems.com/",
+    desc: "Mitigates central nervous system depression, abuse, and misuse."
+  },
+  "almotriptan": { program: "Shared System REMS", url: API.remsDatabase, desc: "Shared safety requirements." },
+  "bosentan": { program: "Opsumit / Tracleer REMS", url: API.remsDatabase, desc: "Monitors risk of hepatotoxicity and embryo-fetal toxicity." },
+  "ambrisentan": { program: "LETAIRIS REMS", url: API.remsDatabase, desc: "Prevents embryo-fetal toxicity." },
+  "riociguat": { program: "ADEMPAS REMS", url: API.remsDatabase, desc: "Mandatory pregnancy testing and prescribing restriction." },
+  "macitentan": { program: "OPSUMIT REMS", url: API.remsDatabase, desc: "Prevents embryo-fetal exposure." },
+  "esketamine": { program: "SPRAVATO REMS", url: "https://www.spravatoremshcp.com/", desc: "Monitors sedation and dissociation post-administration." },
+  "capmatinib": { program: "FDA REMS Oversight", url: API.remsDatabase, desc: "Monitors embryo-fetal toxicity." }
+};
+
 const $ = (id) => document.getElementById(id);
 
-// Safe Fetch Wrapper to handle CORS and network failures gracefully
 async function safeFetchJson(url) {
   try {
     const response = await fetch(url);
@@ -19,10 +79,8 @@ async function safeFetchJson(url) {
   }
 }
 
-// Bind DOM Events on load
 document.addEventListener("DOMContentLoaded", () => {
   const searchForm = $("searchForm");
-  
   if (searchForm) {
     searchForm.addEventListener("submit", (e) => {
       e.preventDefault();
@@ -52,44 +110,30 @@ function first(value, fallback = "") {
   return Array.isArray(value) ? (value[0] || fallback) : (value || fallback);
 }
 
-// Cleans FDA artifacts, empty brackets, section headers, and citations globally
 function cleanText(value) {
   if (value == null) return "";
-  
   let str = Array.isArray(value) ? value.join(" ") : String(value);
 
   return str
-    // 1. Remove HTML tags
     .replace(/<[^>]*>/g, " ")
-    // 2. Remove empty reference links like "[see Warnings and Precautions ( )]" or "[see 17]"
     .replace(/\[\s*see\s+[^\]]*?\]/gi, "")
-    // 3. Remove section citations in parentheses like "( 4 )" or "( 5.1 )"
     .replace(/\(\s*\d+(\.\d+)?\s*\)/g, "")
-    // 4. Remove section headers like "4 CONTRAINDICATIONS" or "1 INDICATIONS AND USAGE"
     .replace(/^\s*\d+(\.\d+)?\s+[A-Z\s]{3,30}\b/g, "")
     .replace(/\b\d+(\.\d+)?\s+[A-Z\s]{3,30}\b/g, "")
-    // 5. Clean up extra space before punctuation
     .replace(/\s+([.,;:?!])/g, "$1")
-    // 6. Normalize whitespace
     .replace(/\s+/g, " ")
     .trim();
 }
 
-// Converts raw text/arrays into a clean, deduplicated bulleted list
 function formatAsBullets(rawInput) {
   const cleaned = cleanText(rawInput);
+  if (!cleaned) return '<p class="muted">No information returned.</p>';
 
-  if (!cleaned) {
-    return '<p class="muted">No information returned.</p>';
-  }
-
-  // Split on periods, inline bullets, or asterisk lists
   const rawItems = cleaned
     .split(/(?<=\.)\s+|•|\s\*\s/)
     .map(item => item.trim())
-    .filter(item => item.length > 5); // Ignore small orphan fragments
+    .filter(item => item.length > 5);
 
-  // Deduplicate identical sentences across the section
   const uniqueItems = [];
   const seen = new Set();
 
@@ -101,15 +145,9 @@ function formatAsBullets(rawInput) {
     }
   }
 
-  if (uniqueItems.length === 0) {
-    return `<p>${cleaned}</p>`;
-  }
+  if (uniqueItems.length === 0) return `<p>${cleaned}</p>`;
 
-  const listItems = uniqueItems
-    .map(item => `<li>${item}</li>`)
-    .join("");
-
-  return `<ul class="label-bullet-list">${listItems}</ul>`;
+  return `<ul class="label-bullet-list">${uniqueItems.map(item => `<li>${item}</li>`).join("")}</ul>`;
 }
 
 async function searchDrug(drug) {
@@ -117,14 +155,12 @@ async function searchDrug(drug) {
 
   clearStatus();
   $("results").classList.add("hidden");
-  setStatus(`Searching FDA label data for "${drug}"...`);
+  setStatus(`Searching FDA and NLM data for "${drug}"...`);
 
   try {
-    // 1. Search generic name first
     const genericUrl = `${API.label}?search=openfda.generic_name:"${encodeURIComponent(drug)}"&limit=10`;
     let labelData = await safeFetchJson(genericUrl);
 
-    // 2. Fall back to brand name search
     if (!labelData?.results?.length) {
       const brandUrl = `${API.label}?search=openfda.brand_name:"${encodeURIComponent(drug)}"&limit=10`;
       labelData = await safeFetchJson(brandUrl);
@@ -136,20 +172,22 @@ async function searchDrug(drug) {
 
     const record = chooseBestLabel(labelData.results, drug);
     const generic = first(record.openfda?.generic_name, drug);
+    const setId = first(record.openfda?.spl_set_id, first(record.set_id));
 
-    // 3. Execute parallel lookup requests
-    const [dailyMed, drugsFda] = await Promise.all([
+    // Parallel API queries to NLM DailyMed and FDA Drugs@FDA
+    const [dailyMed, dailyMedRems, drugsFda] = await Promise.all([
       fetchDailyMed(generic),
+      fetchDailyMedRems(generic, setId),
       fetchDrugsFda(record)
     ]);
 
-    render(record, dailyMed, drugsFda, drug);
+    render(record, dailyMed, dailyMedRems, drugsFda, drug);
 
     clearStatus();
     $("results").classList.remove("hidden");
   } catch (error) {
     console.error("Search Error:", error);
-    setStatus(error.message || "Unable to retrieve FDA data.", "error");
+    setStatus(error.message || "Unable to retrieve FDA/NLM data.", "error");
   }
 }
 
@@ -173,9 +211,26 @@ function chooseBestLabel(records, drug) {
   return scored[0].r;
 }
 
+// Queries NLM DailyMed SPL Search
 async function fetchDailyMed(generic) {
   const url = `${API.dailyMedSearch}?drug_name=${encodeURIComponent(generic)}&pagesize=5&page=1`;
   return await safeFetchJson(url);
+}
+
+// Explicit NLM DailyMed API call to look for REMS SPL documents
+async function fetchDailyMedRems(generic, setId) {
+  if (setId) {
+    const urlBySetId = `https://dailymed.nlm.nih.gov/dailymed/services/v2/spls/${setId}.json`;
+    const res = await safeFetchJson(urlBySetId);
+    if (res?.data?.document_type?.toLowerCase().includes("rems")) {
+      return res.data;
+    }
+  }
+
+  // Fallback NLM search for explicit REMS SPL documents by drug name
+  const remsUrl = `${API.dailyMedSearch}?drug_name=${encodeURIComponent(generic)}&doctype=REMS&pagesize=1`;
+  const searchRes = await safeFetchJson(remsUrl);
+  return searchRes?.data?.[0] || null;
 }
 
 async function fetchDrugsFda(record) {
@@ -191,7 +246,7 @@ async function fetchDrugsFda(record) {
   return await safeFetchJson(`${API.drugsFda}?search=products.active_ingredients.name:"${encodeURIComponent(generic)}"&limit=5`);
 }
 
-function render(record, dailyMed, drugsFda, searchedDrug) {
+function render(record, dailyMed, dailyMedRems, drugsFda, searchedDrug) {
   const of = record.openfda || {};
 
   const generic = first(of.generic_name, searchedDrug);
@@ -204,12 +259,10 @@ function render(record, dailyMed, drugsFda, searchedDrug) {
   $("drugBrand").textContent = brand;
   $("drugManufacturer").textContent = manufacturer;
 
-  // Boxed Warning Section
   const boxed = record.boxed_warning;
   $("boxedBadge").classList.toggle("hidden", !boxed);
   $("boxedWarning").innerHTML = formatAsBullets(boxed);
 
-  // Render Label Sections
   $("indications").innerHTML = formatAsBullets(record.indications_and_usage || record.indications_and_usage_table);
   $("contraindications").innerHTML = formatAsBullets(record.contraindications);
   
@@ -219,7 +272,6 @@ function render(record, dailyMed, drugsFda, searchedDrug) {
 
   $("warnings").innerHTML = formatAsBullets(record.warnings_and_cautions || record.warnings || record.precautions);
 
-  // Specific Populations
   $("pediatric").innerHTML = formatAsBullets(record.pediatric_use || record.use_in_specific_populations);
   $("geriatric").innerHTML = formatAsBullets(record.geriatric_use || record.use_in_specific_populations);
   $("renal").innerHTML = formatAsBullets(record.renal_impairment || record.use_in_specific_populations);
@@ -227,17 +279,14 @@ function render(record, dailyMed, drugsFda, searchedDrug) {
   $("pregnancy").innerHTML = formatAsBullets(record.pregnancy || record.use_in_specific_populations);
   $("lactation").innerHTML = formatAsBullets(record.lactation || record.use_in_specific_populations);
 
-  // Metadata
   const effectiveDate = first(record.effective_time, record.effective_date);
   $("effectiveDate").textContent = formatDate(effectiveDate);
 
   $("setId").textContent = setId || "—";
   $("applicationNumber").textContent = appNumber || "—";
-
   $("dosageForm").textContent = first(of.dosage_form, "—");
   $("route").textContent = first(of.route, "—");
 
-  // External Links
   const dailyMedSetId = dailyMed?.data?.[0]?.[0] || dailyMed?.results?.[0]?.setid;
   const dailyMedTitle = dailyMed?.data?.[0]?.[1] || dailyMed?.results?.[0]?.title;
 
@@ -247,7 +296,6 @@ function render(record, dailyMed, drugsFda, searchedDrug) {
 
   $("dailyMedSource").href = dailyMedUrl;
   $("dailymedIndications").href = dailyMedUrl;
-
   $("labelSource").href = `${API.label}?search=openfda.generic_name:"${encodeURIComponent(generic)}"`;
 
   const drugsFdaApp = drugsFda?.results?.[0]?.application_number || appNumber || "";
@@ -257,7 +305,8 @@ function render(record, dailyMed, drugsFda, searchedDrug) {
 
   $("remsSearch").href = `${API.remsDatabase}`;
 
-  renderRems(record, generic);
+  // Process multi-source REMS verification
+  renderRemsMultiSource(record, generic, dailyMedRems);
 
   $("sourceSummary").textContent = `Search term: ${searchedDrug} • FDA label record: ${setId || "not returned"}`
     + (dailyMedTitle ? ` • DailyMed: ${dailyMedTitle}` : "");
@@ -270,7 +319,7 @@ function renderMaximumDose(dosageText) {
     return;
   }
   
-  const sentences = dosageText.match(/[^.!?]*(?:maximum|max dose|max daily|not exceed)[^.!?]*[.!?]?/gi) || [];
+  const sentences = dosageText.match(/[^.&*!]*(?:maximum|max dose|max daily|not exceed)[^.!?]*[.!?]?/gi) || [];
 
   if (sentences.length) {
     box.textContent = "FDA dosage text mentioning a maximum: " + sentences.slice(0, 3).join(" ");
@@ -280,12 +329,44 @@ function renderMaximumDose(dosageText) {
   }
 }
 
-// Dynamic REMS Detection & Query Generation
-function renderRems(record, generic) {
+// Multi-Source REMS Resolver: Checks Local FDA Registry, NLM DailyMed SPL, openFDA fields, and text
+function renderRemsMultiSource(record, generic, dailyMedRems) {
   const container = $("remsResult");
   const cleanGeneric = (generic || "").toLowerCase().trim();
 
-  // 1. Check for explicit REMS fields in openFDA JSON
+  // Source 1: Check match against Generic FDA REMS Registry Map (e.g. isotretinoin -> iPLEDGE)
+  let matchedKey = Object.keys(FDA_REMS_REGISTRY).find(k => cleanGeneric.includes(k));
+  if (matchedKey) {
+    const registryData = FDA_REMS_REGISTRY[matchedKey];
+    container.innerHTML = `
+      <div class="rems-badge rems-active">Active Mandatory FDA REMS Program</div>
+      <h4 style="margin: 0.5rem 0 0.2rem 0; font-size: 1.05rem;">${registryData.program}</h4>
+      <p style="margin: 0 0 0.5rem 0;">${registryData.desc}</p>
+      <a href="${registryData.url}" target="_blank" rel="noopener" class="rems-link-btn">
+        Access ${registryData.program} Portal &rarr;
+      </a>
+    `;
+    return;
+  }
+
+  // Source 2: NLM DailyMed REMS SPL Document Response
+  if (dailyMedRems) {
+    const splTitle = dailyMedRems.title || dailyMedRems[1] || "REMS Document";
+    const setId = dailyMedRems.setid || dailyMedRems[0];
+    const nlmUrl = setId ? `https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=${setId}` : API.remsDatabase;
+
+    container.innerHTML = `
+      <div class="rems-badge rems-active">REMS Document Identified on NLM DailyMed</div>
+      <h4 style="margin: 0.5rem 0 0.2rem 0; font-size: 1.05rem;">${splTitle}</h4>
+      <p style="margin: 0 0 0.5rem 0;">The National Library of Medicine (NLM) catalogs active REMS documentation for this product.</p>
+      <a href="${nlmUrl}" target="_blank" rel="noopener" class="rems-link-btn">
+        View NLM REMS Document &rarr;
+      </a>
+    `;
+    return;
+  }
+
+  // Source 3: Explicit REMS JSON field in openFDA Label
   const remsFields = [
     record.risk_evaluation_and_mitigation_strategy,
     record.rems,
@@ -297,13 +378,13 @@ function renderRems(record, generic) {
       <div class="rems-badge rems-active">Active REMS Program Requirements Found</div>
       <div style="margin-top: 0.5rem;">${formatAsBullets(remsFields.join(" "))}</div>
       <p class="small-note" style="margin-top: 0.5rem;">
-        Verify active status on the <a href="${API.remsDatabase}" target="_blank" rel="noopener">Official FDA REMS Portal</a>.
+        Verify requirements on the <a href="${API.remsDatabase}" target="_blank" rel="noopener">Official FDA REMS Database</a>.
       </p>
     `;
     return;
   }
 
-  // 2. Dynamically scan Warning section for REMS requirements
+  // Source 4: Scan warnings text for REMS references
   const warningText = cleanText(record.warnings_and_cautions || record.warnings);
   const match = warningText.match(/[^.!?]*\bREMS\b[^.!?]*[.!?]?/gi);
 
@@ -319,15 +400,15 @@ function renderRems(record, generic) {
     return;
   }
 
-  // 3. Fallback when no REMS text is found in label
-  const fallbackSearchUrl = `https://www.accessdata.fda.gov/scripts/cder/rems/index.cfm?event=IndivRems.page&DrugName=${encodeURIComponent(generic)}`;
+  // Source 5: Fallback when no sources detect REMS requirements
+  const fallbackUrl = `https://www.accessdata.fda.gov/scripts/cder/rems/index.cfm?event=IndivRems.page&DrugName=${encodeURIComponent(generic)}`;
   container.innerHTML = `
-    <div class="rems-badge rems-none">No REMS Program Listed in Label</div>
+    <div class="rems-badge rems-none">No REMS Program Identified</div>
     <p style="margin: 0.5rem 0;" class="muted">
-      This label record does not explicitly mandate a Risk Evaluation and Mitigation Strategy (REMS).
+      Neither openFDA, NLM DailyMed, nor label warnings list active REMS requirements for this search.
     </p>
-    <a href="${fallbackSearchUrl}" target="_blank" rel="noopener" class="small-note">
-      Check live FDA database to confirm &rarr;
+    <a href="${fallbackUrl}" target="_blank" rel="noopener" class="small-note">
+      Verify directly on FDA.gov &rarr;
     </a>
   `;
 }
